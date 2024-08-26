@@ -47,14 +47,30 @@ app.get("/register", (req, res) => {
   res.render("register.ejs");
 });
 
-app.get("/secrets", (req, res) => {
+app.get("/secrets", async (req, res) => {
   //if user is authenticated => go to secrets page
   if (req.isAuthenticated()) {
-    res.render("secrets.ejs");
+    
+    try {
+      const [rows] = await db.execute("Select scret from users Where email = ?",[req.user.email]);
+      let secret = rows[0].secret;
+      if(secret){
+        
+        res.render("secrets.ejs", { secret });
+      }else{
+        secret = rows[0].secret;
+        res.render("secrets.ejs", {secret});
+      }
+    } catch (error) {
+      console.log(error);
+
+      
+    }
+    
   } else {
     //if user is not authenticated => redirtect to login page
     console.log("Not authenticated");
-    res.redirect("login.ejs");
+    res.redirect("/login");
   }
 });
 
@@ -70,18 +86,44 @@ app.get(
   passport.authenticate("google", {
     successRedirect: "/secrets",
     failureRedirect: "/login",
-  }) 
+  })
 );
 
-app.get("/logout",(req,res) =>{
-  req.logout((err)=>{
-    if(err){
+app.get("/logout", (req, res) => {
+  req.logout((err) => {
+    if (err) {
       console.log("Error");
-    }else{
+    } else {
       res.redirect("/");
     }
-  })
-})
+  });
+});
+
+app.get("/submit",(req,res) =>{
+  if (req.isAuthenticated()) {
+    res.render("submit.ejs");
+  } else {
+    res.redirect("/login");
+  }
+});
+
+app.post("/submit", async (req, res) => {
+  const secret = req.body.secret;
+  try {
+    // Use correct SQL syntax and column name 'scret'
+    const [result] = await db.execute("UPDATE users SET scret = ? WHERE email = ?", [secret, req.user.email]);
+
+    // Send a response or handle success
+    res.status(200).send("Secret updated successfully");
+    res.render("submit.ejs");
+  } catch (error) {
+    console.error('Error updating secret:', error);
+
+    // Send an error response
+    res.status(500).send("Error updating secret");
+  }
+});
+
 
 app.post("/register", async (req, res) => {
   const email = req.body.username;
@@ -143,8 +185,7 @@ passport.use(
   "google",
   new GoogleStrategy(
     {
-      clientID:
-        process.env.ID,
+      clientID: process.env.ID,
       clientSecret: process.env.OSECRET,
       callbackURL: "http://localhost:3000/auth/google/secrets",
       userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo",
@@ -152,12 +193,17 @@ passport.use(
     async (accessToken, refreshToken, profile, cb) => {
       console.log(profile);
       try {
-        const [rows] = await db.execute("Select * From users Where email = ?",[profile.email]);
-        
-        if(rows.length==0){
-          const [result] = await db.execute("Insert Into users (email,password) Values (?,?)",[profile.email,"google"])
+        const [rows] = await db.execute("Select * From users Where email = ?", [
+          profile.email,
+        ]);
+
+        if (rows.length == 0) {
+          const [result] = await db.execute(
+            "Insert Into users (email,password) Values (?,?)",
+            [profile.email, "google"]
+          );
           cb(null, result[0]);
-        }else{
+        } else {
           //User Existing
           return cb(null, rows[0]);
         }
